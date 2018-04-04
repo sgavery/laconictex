@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+
+# See also: texfot.pl, texloganalyser
+
+import sys
+import subprocess
+import re
+import termcolor
+import argparse
+
+__version__ = "0.0.1"
+laconictexdescription =\
+"""Filter LaTeX output to relevant information.
+"""
+
+critical_text = lambda x: termcolor.colored(x, 'red', attrs=['bold'])
+noise_text = lambda x: termcolor.colored(x, attrs=['dark'])
+warning_text = lambda x: termcolor.colored(x, 'yellow')
+info_text = lambda x: termcolor.colored(x, 'cyan')
+
+success_r = r'Output written'
+failure_r = r'No pages of output'
+boxwarning_r = r'.*(Ov|Und)erfull \\(h|v)box'
+tex_error_r = r'^!'
+lineno_r = r'^l\.(\d+)'
+latexwarning_r = r'.*(?:W|w)arning:'
+latexerror_r = r'.*(?:E|e)rror:'
+
+info_re = re.compile(success_r)
+warning_re = re.compile(r'|'.join([boxwarning_r, latexwarning_r]))
+critical_re = re.compile(r'|'.join([tex_error_r, latexerror_r, failure_r]))
+
+messageblock_re = re.compile(r'|'.join([tex_error_r, lineno_r, latexwarning_r, latexerror_r]))
+nomessageblock_re = re.compile(r'|'.join([boxwarning_r, success_r, failure_r]))
+
+
+def laconictex_parseargs(argv):
+    parser = argparse.ArgumentParser(prog='laconictex', description=laconictexdescription)
+    parser.add_argument('--debug', '-D', action='store_true', default=False,
+                        help='Debug mode')
+    parser.add_argument('--command', '-c', action='store', default='pdflatex -interaction=nonstopmode',
+                        help='LaTeX command to use')
+    parser.add_argument('--linenumbers', '-l', action='store_true', default=False)
+    parser.add_argument('filename', help='LaTeX file')
+
+    return parser.parse_args(argv[1:])
+
+
+def displayline(lineno, line):
+    print('{:>5}: {}'.format(lineno, line), end='')
+
+def main(argv=[]):
+    args = laconictex_parseargs(argv)
+
+    # Use stdbuf to prevent buffering when outputing to a pipe.
+    texproc =  subprocess.Popen(['stdbuf', '-oL'] + args.command.split() + [args.filename],
+                                stdout=subprocess.PIPE,
+                                bufsize=1,
+                                universal_newlines=True)
+
+    in_messageblock = False
+
+    for lineno, line in enumerate(texproc.stdout):
+        if in_messageblock:
+            displayline(lineno, warning_text(line))
+            if line.startswith('\n') or line.strip() == '':
+                in_messageblock = False
+        elif messageblock_re.match(line):
+            displayline(lineno, critical_text(line))
+            in_messageblock = True
+        elif nomessageblock_re.match(line):
+            displayline(lineno, warning_text(line))
+        elif args.debug:
+            displayline(lineno, noise_text(line))
+
+    return 0
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))
