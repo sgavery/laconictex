@@ -5,18 +5,23 @@
 import sys
 import subprocess
 import re
-import termcolor
 import argparse
+import enum
 
-__version__ = "0.0.1"
+try:
+    import termcolor
+except ImportError:
+    termcolor = None
+
+
+__version__ = '0.0.5'
 laconictexdescription =\
 """Filter LaTeX output to relevant information.
 """
 
-critical_text = lambda x: termcolor.colored(x, 'red', attrs=['bold'])
-noise_text = lambda x: termcolor.colored(x, attrs=['dark'])
-warning_text = lambda x: termcolor.colored(x, 'yellow')
-info_text = lambda x: termcolor.colored(x, 'cyan')
+
+colorlevels = ['white', 'white', 'yellow', 'red']
+attrlevels = [['reverse', 'dark'], ['dark'], [], ['bold']]
 
 success_r = r'Output written'
 failure_r = r'No pages of output'
@@ -25,13 +30,33 @@ tex_error_r = r'^!'
 lineno_r = r'^l\.(\d+)'
 latexwarning_r = r'.*(?:W|w)arning:'
 latexerror_r = r'.*(?:E|e)rror:'
+runaway_r = r'Runaway argument\?'
+triplehash_r = r'^###'
+fatalerr_r = r'^!  ==> Fatal'  # a tex_error_r that should _not_ get a message block
 
-info_re = re.compile(success_r)
-warning_re = re.compile(r'|'.join([boxwarning_r, latexwarning_r]))
-critical_re = re.compile(r'|'.join([tex_error_r, latexerror_r, failure_r]))
+info_re = re.compile(r'|'.join([success_r]))
+warning_re = re.compile(r'|'.join([boxwarning_r, latexwarning_r, lineno_r]))
+critical_re = re.compile(r'|'.join([tex_error_r, latexerror_r, failure_r, runaway_r, triplehash_r]))
 
-messageblock_re = re.compile(r'|'.join([tex_error_r, lineno_r, latexwarning_r, latexerror_r]))
-nomessageblock_re = re.compile(r'|'.join([boxwarning_r, success_r, failure_r]))
+messageblock_re = re.compile(r'|'.join([tex_error_r, lineno_r, latexwarning_r, latexerror_r, runaway_r]))
+nomessageblock_re = re.compile(r'|'.join([boxwarning_r, success_r, failure_r, triplehash_r, fatalerr_r]))
+
+
+class MessageLevel(enum.IntEnum):
+    noise = 0
+    info = 1
+    warning = 2
+    critical = 3
+
+    @classmethod
+    def find(cls, line):
+        if critical_re.match(line):
+            return cls.critical
+        elif warning_re.match(line):
+            return cls.warning
+        elif info_re.match(line):
+            return cls.info
+        return cls.noise
 
 
 def laconictex_parseargs(argv):
@@ -46,8 +71,18 @@ def laconictex_parseargs(argv):
     return parser.parse_args(argv[1:])
 
 
-def displayline(lineno, line):
-    print('{:>5}: {}'.format(lineno, line), end='')
+def displayline(lineno, line, level, with_line_number=False):
+    if with_line_number:
+        print('{:>5}: {}'.format(lineno, color(line, level)), end='')
+    else:
+        print(color(line,level), end='')
+
+
+def color(line, level):
+    if termcolor:
+        return termcolor.colored(line, colorlevels[level], attrs=attrlevels[level])
+    return line
+
 
 def main(argv=[]):
     args = laconictex_parseargs(argv)
@@ -59,19 +94,33 @@ def main(argv=[]):
                                 universal_newlines=True)
 
     in_messageblock = False
+    messagelevel = MessageLevel.noise
+    to_display = False
 
     for lineno, line in enumerate(texproc.stdout):
         if in_messageblock:
-            displayline(lineno, warning_text(line))
+            to_display = True
             if line.startswith('\n') or line.strip() == '':
+                # Uncomment the following line for more compact output
+                # with no empty lines between message blocks.
+                # to_display = False
                 in_messageblock = False
-        elif messageblock_re.match(line):
-            displayline(lineno, critical_text(line))
-            in_messageblock = True
         elif nomessageblock_re.match(line):
-            displayline(lineno, warning_text(line))
+            to_display = True
+            messagelevel = MessageLevel.find(line)
+        elif messageblock_re.match(line):
+            in_messageblock = True
+            messagelevel = MessageLevel.find(line)
+            to_display = True
         elif args.debug:
-            displayline(lineno, noise_text(line))
+            messagelevel = MessageLevel.noise
+            to_display = True
+        else:
+            messagelevel = MessageLevel.noise
+            to_display = False
+
+        if to_display:
+            displayline(lineno, line, messagelevel, args.linenumbers)
 
     return 0
 
