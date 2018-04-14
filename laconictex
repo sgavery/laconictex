@@ -15,9 +15,13 @@ except ImportError:
 
 
 __version__ = '0.0.5'
+default_command = 'pdflatex -interaction=nonstopmode'
 laconictexdescription =\
 """Filter LaTeX output to relevant information.
-"""
+
+The default command is given by "{}".
+
+""".format(default_command)
 
 
 colorlevels = ['white', 'white', 'yellow', 'red']
@@ -35,11 +39,25 @@ triplehash_r = r'^###'
 fatalerr_r = r'^!  ==> Fatal'  # a tex_error_r that should _not_ get a message block
 
 info_re = re.compile(r'|'.join([success_r]))
-warning_re = re.compile(r'|'.join([boxwarning_r, latexwarning_r, lineno_r]))
-critical_re = re.compile(r'|'.join([tex_error_r, latexerror_r, failure_r, runaway_r, triplehash_r]))
+warning_re = re.compile(r'|'.join([boxwarning_r,
+                                   latexwarning_r,
+                                   lineno_r]))
+critical_re = re.compile(r'|'.join([tex_error_r,
+                                    latexerror_r,
+                                    failure_r,
+                                    runaway_r,
+                                    triplehash_r]))
 
-messageblock_re = re.compile(r'|'.join([tex_error_r, lineno_r, latexwarning_r, latexerror_r, runaway_r]))
-nomessageblock_re = re.compile(r'|'.join([boxwarning_r, success_r, failure_r, triplehash_r, fatalerr_r]))
+messageblock_re = re.compile(r'|'.join([tex_error_r,
+                                        lineno_r,
+                                        latexwarning_r,
+                                        latexerror_r,
+                                        runaway_r]))
+nomessageblock_re = re.compile(r'|'.join([boxwarning_r,
+                                          success_r,
+                                          failure_r,
+                                          triplehash_r,
+                                          fatalerr_r]))
 
 
 class MessageLevel(enum.IntEnum):
@@ -63,9 +81,10 @@ def laconictex_parseargs(argv):
     parser = argparse.ArgumentParser(prog='laconictex', description=laconictexdescription)
     parser.add_argument('--debug', '-D', action='store_true', default=False,
                         help='Debug mode')
-    parser.add_argument('--command', '-c', action='store', default='pdflatex -interaction=nonstopmode',
+    parser.add_argument('--command', '-c', action='store', default=default_command,
                         help='LaTeX command to use')
-    parser.add_argument('--linenumbers', '-l', action='store_true', default=False)
+    parser.add_argument('--linenumbers', '-l', action='store_true', default=False,
+                        help='Display output line numbers')
     parser.add_argument('filename', help='LaTeX file')
 
     return parser.parse_args(argv[1:])
@@ -101,8 +120,8 @@ def main(argv=[]):
         if in_messageblock:
             to_display = True
             if line.startswith('\n') or line.strip() == '':
-                # Uncomment the following line for more compact output
-                # with no empty lines between message blocks.
+                ## Uncomment the following line for more compact output
+                ## with no empty lines between message blocks.
                 # to_display = False
                 in_messageblock = False
         elif nomessageblock_re.match(line):
