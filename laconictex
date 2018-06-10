@@ -49,7 +49,7 @@ critical_re = re.compile(r'|'.join([tex_error_r,
                                     triplehash_r]))
 
 messageblock_re = re.compile(r'|'.join([tex_error_r,
-                                        lineno_r,
+                                        # lineno_r,
                                         latexwarning_r,
                                         latexerror_r,
                                         runaway_r]))
@@ -58,6 +58,7 @@ nomessageblock_re = re.compile(r'|'.join([boxwarning_r,
                                           failure_r,
                                           triplehash_r,
                                           fatalerr_r]))
+doublet_re = re.compile(lineno_r)
 
 
 class MessageLevel(enum.IntEnum):
@@ -113,24 +114,34 @@ def main(argv=[]):
                                 universal_newlines=True)
 
     in_messageblock = False
+    block_counter = 0
     messagelevel = MessageLevel.noise
     to_display = False
 
     for lineno, line in enumerate(texproc.stdout):
-        if in_messageblock:
+        if block_counter > 0:
+            to_display = True
+            block_counter -= 1
+        elif nomessageblock_re.match(line):
+            to_display = True
+            in_messageblock = False
+            messagelevel = MessageLevel.find(line)
+        elif doublet_re.match(line):
+            to_display = True
+            in_messageblock = False
+            block_counter = 1
+            messagelevel = MessageLevel.find(line)
+        elif messageblock_re.match(line):
+            in_messageblock = True
+            messagelevel = MessageLevel.find(line)
+            to_display = True
+        elif in_messageblock:
             to_display = True
             if line.startswith('\n') or line.strip() == '':
                 ## Uncomment the following line for more compact output
                 ## with no empty lines between message blocks.
                 # to_display = False
                 in_messageblock = False
-        elif nomessageblock_re.match(line):
-            to_display = True
-            messagelevel = MessageLevel.find(line)
-        elif messageblock_re.match(line):
-            in_messageblock = True
-            messagelevel = MessageLevel.find(line)
-            to_display = True
         elif args.debug:
             messagelevel = MessageLevel.noise
             to_display = True
